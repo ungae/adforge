@@ -1,0 +1,22 @@
+{
+  "name": "adforge",
+  "version": "0.1.0",
+  "description": "AI 광고 자동 제작 시스템 (AI Ad Automatic Creation System) - Modular Architecture",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx src/index.ts",
+    "start": "npx tsx src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'No linter configured yet'"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.4"
+  }
+}
