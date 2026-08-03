@@ -114,20 +114,20 @@ export type PersonaDistribution = z.infer<typeof PersonaDistributionSchema>;
 
 export const ReviewIntelligenceSchema = z.object({
   promptVersion: z.string().default('v1.0'),
-  purchaseReasons: z.array(z.string()),
-  customerLanguage: z.array(CustomerLanguageItemSchema),
-  painPoints: z.array(z.string()),
-  praisePoints: z.array(z.string()),
-  objections: ReviewObjectionsSchema,
-  emotionalTriggers: z.array(z.string()),
-  unexpectedBenefits: z.array(z.string()),
-  usageScenarios: z.array(z.string()),
-  beforeAfter: z.array(z.string()),
-  hookCandidates: z.array(z.string()),
-  adCandidateReviews: z.array(ReviewCandidateSchema),
-  faqCandidates: z.array(z.string()),
+  purchaseReasons: z.array(z.string()).default([]),
+  customerLanguage: z.array(z.any()).default([]),
+  painPoints: z.array(z.any()).default([]),
+  praisePoints: z.array(z.any()).default([]),
+  objections: ReviewObjectionsSchema.optional(),
+  emotionalTriggers: z.array(z.string()).default([]),
+  unexpectedBenefits: z.array(z.string()).default([]),
+  usageScenarios: z.array(z.string()).default([]),
+  beforeAfter: z.array(z.string()).default([]),
+  hookCandidates: z.array(z.string()).default([]),
+  adCandidateReviews: z.array(z.any()).default([]),
+  faqCandidates: z.array(z.string()).default([]),
   personaDistribution: z.array(PersonaDistributionSchema).default([]),
-  statistics: ReviewStatisticsSchema,
+  statistics: ReviewStatisticsSchema.optional(),
   evidences: z.array(ReviewEvidenceItemSchema).default([]),
   // Backward compatibility fields for v1 pipeline tests:
   overallRating: z.number().default(4.8),
@@ -145,115 +145,305 @@ export const ReviewIntelligenceSchema = z.object({
 export type ReviewIntelligenceResult = z.infer<typeof ReviewIntelligenceSchema>;
 
 // ---------------------------------------------------------------------------
-// 3. Competitor Finder Schema & Types
+// Common JSON Meta Header (Sprint 3 Requirement 8)
 // ---------------------------------------------------------------------------
+export const JsonMetaHeaderSchema = z.object({
+  schemaVersion: z.string().default('1.0'),
+  pipelineVersion: z.string().default('Sprint3'),
+  generatedAt: z.string(),
+  generatorVersion: z.string().default('AdForge v2'),
+  campaignId: z.string(),
+  sourceUrl: z.string().optional(),
+});
+
+export type JsonMetaHeader = z.infer<typeof JsonMetaHeaderSchema>;
+
+// Helper for wrapping output with standard { meta, data } format
+export const createEnvelopeSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
+  z.object({
+    meta: JsonMetaHeaderSchema,
+    data: dataSchema,
+  });
+
+// ---------------------------------------------------------------------------
+// 3. Competitor Finder Schema & Types (Sprint 3 - Requirement 3 & 4-Stage)
+// ---------------------------------------------------------------------------
+export const CompetitorItemSchema = z.object({
+  brand: z.string(),
+  productName: z.string(),
+  price: z.number(),
+  rating: z.number(),
+  reviewCount: z.number(),
+  coreUSP: z.string(),
+  detailPageClaims: z.array(z.string()),
+  reviewKeywords: z.array(z.string()),
+  strengths: z.array(z.string()),
+  weaknesses: z.array(z.string()),
+  differentiationPoint: z.string(), // opportunities / differentiation vs our brand
+  mainImageUrl: z.string().optional(),
+  hasMetaAd: z.boolean().optional(),
+  metaAdDurationDays: z.number().optional(),
+  naverSearchVolume: z.string().optional(),
+  evidenceIds: z.array(z.string()).default([]),
+  // v1 backwards compatibility
+  brandName: z.string().optional(),
+  productUrl: z.string().optional(),
+  estimatedPrice: z.number().optional(),
+});
+
 export const CompetitorAnalysisSchema = z.object({
-  competitors: z.array(
-    z.object({
-      brandName: z.string(),
-      productName: z.string(),
-      productUrl: z.string(),
-      estimatedPrice: z.number(),
-      strengths: z.array(z.string()),
-      weaknesses: z.array(z.string()),
-      differentiationPoint: z.string(),
-    })
-  ),
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  competitors: z.array(CompetitorItemSchema),
   marketPositioningSummary: z.string(),
 });
 
+export type CompetitorItem = z.infer<typeof CompetitorItemSchema>;
 export type CompetitorAnalysisResult = z.infer<typeof CompetitorAnalysisSchema>;
 
 // ---------------------------------------------------------------------------
-// 4. Meta Ad Analyzer Schema & Types
+// 4. Meta Ad Analyzer Schema & Types (Sprint 3 - Requirement 2: 7-part Ad Structure)
 // ---------------------------------------------------------------------------
-export const MetaAdAnalysisSchema = z.object({
-  analyzedAdCount: z.number(),
-  winningHooks: z.array(
-    z.object({
-      hookText: z.string(),
-      hookType: z.enum(['QUESTION', 'SHOCKING_FACT', 'BENEFIT', 'PAIN_POINT']),
-      estimatedEngagement: z.enum(['HIGH', 'MEDIUM']),
-    })
-  ),
-  dominantVisualStyles: z.array(z.string()),
-  ctaPatterns: z.array(z.string()),
+export const MetaAdStructureSchema = z.object({
+  Hook: z.string(),
+  Problem: z.string(),
+  Empathy: z.string(),
+  USP: z.string(),
+  UsageScene: z.string(),
+  SocialProof: z.string(),
+  CTA: z.string(),
 });
 
+export const MetaAdItemSchema = z.object({
+  adId: z.string(),
+  structure: MetaAdStructureSchema,
+  hookType: z.enum(['QUESTION', 'SHOCKING_FACT', 'BENEFIT', 'PAIN_POINT', 'CONTRADICTION', 'STORY']),
+  hookText: z.string(),
+  ctaType: z.string(),
+  ctaText: z.string(),
+  sceneCount: z.number(),
+  videoLength: z.number(),
+  first3Seconds: z.string(),
+  subtitleStyle: z.string(),
+  visualStyle: z.string(),
+  isUGC: z.boolean(),
+  isBeforeAfter: z.boolean(),
+  evidenceIds: z.array(z.string()).default([]),
+});
+
+export const MetaAdAnalysisSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  analyzedAdCount: z.number(),
+  ads: z.array(MetaAdItemSchema).default([]),
+  dominantVisualStyles: z.array(z.string()),
+  ctaPatterns: z.array(z.string()),
+  // v1 backwards compatibility
+  winningHooks: z
+    .array(
+      z.object({
+        hookText: z.string(),
+        hookType: z.enum(['QUESTION', 'SHOCKING_FACT', 'BENEFIT', 'PAIN_POINT', 'CONTRADICTION', 'STORY']),
+        estimatedEngagement: z.enum(['HIGH', 'MEDIUM']),
+      })
+    )
+    .optional(),
+});
+
+export type MetaAdStructure = z.infer<typeof MetaAdStructureSchema>;
+export type MetaAdItem = z.infer<typeof MetaAdItemSchema>;
 export type MetaAdAnalysisResult = z.infer<typeof MetaAdAnalysisSchema>;
 
 // ---------------------------------------------------------------------------
-// 5. Knowledge Base Loader (Obsidian KB) Schema & Types
+// 5. Knowledge Base Loader Schema & Types (Sprint 3 - Requirement 7: KB First)
 // ---------------------------------------------------------------------------
+export const KnowledgeBaseDocumentSchema = z.object({
+  filePath: z.string(),
+  title: z.string(),
+  tags: z.array(z.string()),
+  content: z.string().default(''),
+  keyInsights: z.array(z.string()),
+  applicableFrameworks: z.array(z.string()),
+});
+
 export const KnowledgeBaseSchema = z.object({
-  loadedDocuments: z.array(
-    z.object({
-      filePath: z.string(),
-      title: z.string(),
-      tags: z.array(z.string()),
-      keyInsights: z.array(z.string()),
-      applicableFrameworks: z.array(z.string()),
-    })
-  ),
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  loadedDocuments: z.array(KnowledgeBaseDocumentSchema),
   brandGuidelineOverride: z.object({
     toneAndManner: z.string(),
     forbiddenWords: z.array(z.string()),
     preferredHookStyles: z.array(z.string()),
+    videoGuidelines: z.array(z.string()).default([]),
   }),
 });
 
+export type KnowledgeBaseDocument = z.infer<typeof KnowledgeBaseDocumentSchema>;
 export type KnowledgeBaseResult = z.infer<typeof KnowledgeBaseSchema>;
 
 // ---------------------------------------------------------------------------
-// 6. Evidence Engine Schema & Types
+// 6. Persona Engine Schema & Types (Sprint 3 - Requirement 4: Min 5 Personas + Evidence)
 // ---------------------------------------------------------------------------
-export const EvidenceSourceSchema = z.object({
-  sourceType: z.enum(['REVIEW', 'COMPETITOR', 'META_AD', 'OBSIDIAN_KB', 'PRODUCT_SPEC']),
-  referenceId: z.string(),
-  snippet: z.string(),
-  rationale: z.string(),
+export const PersonaItemSchema = z.object({
+  personaId: z.string(),
+  personaName: z.string(), // e.g. "사무직 직장인", "육아맘", "운동인", "선물용 구매자", "4050세대"
+  pain: z.string(),
+  goal: z.string(),
+  fear: z.string(),
+  trigger: z.string(),
+  preferredHook: z.string(),
+  purchaseReason: z.string(),
+  evidenceIds: z.array(z.string()).min(1),
 });
 
-export const UspEvidenceSchema = z.object({
-  uspId: z.string(),
-  uspText: z.string(),
-  confidenceScore: z.number().min(0).max(100),
-  evidenceSources: z.array(EvidenceSourceSchema),
+export const PersonaEngineSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  personas: z.array(PersonaItemSchema).min(1), // will enforce >= 5 in validation/tests
 });
 
-export const EvidenceStoreSchema = z.object({
-  campaignId: z.string(),
-  uspEvidences: z.array(UspEvidenceSchema),
-});
-
-export type EvidenceSource = z.infer<typeof EvidenceSourceSchema>;
-export type UspEvidence = z.infer<typeof UspEvidenceSchema>;
-export type EvidenceStoreResult = z.infer<typeof EvidenceStoreSchema>;
+export type PersonaItem = z.infer<typeof PersonaItemSchema>;
+export type PersonaEngineResult = z.infer<typeof PersonaEngineSchema>;
 
 // ---------------------------------------------------------------------------
-// 7. USP Generator Schema & Types
+// 7. Winning Angle Engine Schema & Types (Sprint 3 - Requirement 5: Min 3 Angles/Persona)
 // ---------------------------------------------------------------------------
-export const WinningAngleSchema = z.object({
+export const WinningAngleItemSchema = z.object({
   angleId: z.string(),
-  angleName: z.string(),
-  targetPersona: z.string(),
-  hookStatement: z.string(),
-  problemStatement: z.string(),
-  solutionStatement: z.string(),
-  socialProofAnchor: z.string(),
+  persona: z.string().optional(), // target persona name
+  pain: z.string().optional(),
+  hook: z.string().optional(),
+  angle: z.string().optional(),
+  emotion: z.string().optional(),
+  evidenceIds: z.array(z.string()).optional(),
+  // v1 backwards compatibility
+  angleName: z.string().optional(),
+  targetPersona: z.string().optional(),
+  hookStatement: z.string().optional(),
+  problemStatement: z.string().optional(),
+  solutionStatement: z.string().optional(),
+  socialProofAnchor: z.string().optional(),
+});
+
+export const WinningAngleEngineSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  winningAngles: z.array(WinningAngleItemSchema).min(1), // >= 3 angles per persona
+});
+
+export type WinningAngleItem = z.infer<typeof WinningAngleItemSchema>;
+export type WinningAngleEngineResult = z.infer<typeof WinningAngleEngineSchema>;
+
+// ---------------------------------------------------------------------------
+// 8. USP Generator Schema & Types (Sprint 3 - Requirement 6: 7 Extended USP Types)
+// ---------------------------------------------------------------------------
+export const UspTypeEnum = z.enum([
+  'PRIMARY',
+  'FUNCTIONAL',
+  'EMOTIONAL',
+  'SOCIAL_PROOF',
+  'PRICE',
+  'COMPETITOR',
+  'OFFER',
+]);
+
+export const UspItemSchema = z.object({
+  uspType: UspTypeEnum,
+  uspName: z.string(), // e.g. "Primary USP", "Functional USP", etc.
+  uspText: z.string(), // advertising copy message, not technical spec
+  reasonWhy: z.string(),
+  supportingEvidence: z.string(),
+  competitorGap: z.string(),
+  reviewQuote: z.string(),
+  evidenceIds: z.array(z.string()).min(1),
 });
 
 export const UspGenerationSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  usps: z.array(UspItemSchema).min(7), // all 7 required types
   primaryUsp: z.string(),
   secondaryUsps: z.array(z.string()),
-  winningAngles: z.array(WinningAngleSchema),
-  differentiationMatrix: z.object({
-    vsCompetitors: z.array(z.string()),
-  }),
+  winningAngles: z.array(WinningAngleItemSchema).default([]), // backwards compatibility
+  differentiationMatrix: z
+    .object({
+      vsCompetitors: z.array(z.string()),
+    })
+    .optional(),
 });
 
-export type WinningAngle = z.infer<typeof WinningAngleSchema>;
+export type UspType = z.infer<typeof UspTypeEnum>;
+export type UspItem = z.infer<typeof UspItemSchema>;
 export type UspGenerationResult = z.infer<typeof UspGenerationSchema>;
+
+// ---------------------------------------------------------------------------
+// 9. Evidence Engine Schema & Types (Sprint 3 - Requirement 3 & Full Provable Index)
+// ---------------------------------------------------------------------------
+export const EvidenceItemSchema = z.object({
+  evidenceId: z.string().optional(),
+  evidenceType: z.enum(['REVIEW', 'COMPETITOR', 'META_AD', 'PRODUCT_SPEC', 'KNOWLEDGE_BASE']).optional(),
+  sourceId: z.string().optional(),
+  quote: z.string().optional(),
+  rationale: z.string().optional(),
+  source: z.string().optional(),
+  excerpt: z.string().optional(),
+  referencedBy: z.array(z.string()).optional(),
+  // v1 backwards compatibility
+  sourceType: z.enum(['REVIEW', 'COMPETITOR', 'META_AD', 'OBSIDIAN_KB', 'PRODUCT_SPEC']).optional(),
+  referenceId: z.string().optional(),
+  snippet: z.string().optional(),
+});
+
+export const EvidenceStoreSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  reason: z.string().optional(),
+  campaignId: z.string().optional(),
+  evidences: z.array(EvidenceItemSchema).optional(),
+  connectionRate: z.number().min(0).max(100).default(100),
+  // v1 backwards compatibility
+  uspEvidences: z
+    .array(
+      z.object({
+        uspId: z.string(),
+        uspText: z.string(),
+        confidenceScore: z.number().min(0).max(100),
+        evidenceSources: z.array(EvidenceItemSchema),
+      })
+    )
+    .optional(),
+});
+
+export const EvidenceEngineSchema = z.object({
+  status: z.enum(['SUCCESS', 'NOT_FOUND']).default('SUCCESS'),
+  totalEvidences: z.number(),
+  verifiedLinkageCount: z.number(),
+  unlinkedCount: z.number(),
+  evidenceMap: z.record(EvidenceItemSchema),
+});
+
+export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
+export type EvidenceStoreResult = z.infer<typeof EvidenceStoreSchema>;
+export type EvidenceEngineResult = z.infer<typeof EvidenceEngineSchema>;
+
+// ---------------------------------------------------------------------------
+// 10. Sprint 4 Script Generation Interface (THE SOURCE OF TRUTH)
+// ---------------------------------------------------------------------------
+export const ScriptGenerationInputSchema = z.object({
+  meta: JsonMetaHeaderSchema,
+  campaignId: z.string(),
+  sourceUrl: z.string(),
+  productAnalysis: z.any(), // 01_product_analysis
+  reviewIntelligence: z.any(), // 03_review_intelligence
+  competitorAnalysis: CompetitorAnalysisSchema, // 04_competitor_analysis
+  metaAdAnalysis: MetaAdAnalysisSchema, // 05_meta_ad_analysis
+  knowledgeBase: KnowledgeBaseSchema, // 05_knowledge_base
+  personas: PersonaEngineSchema, // 06_personas
+  winningAngles: WinningAngleEngineSchema, // 07_winning_angles
+  uspGeneration: UspGenerationSchema, // 08_usp_generation
+  evidenceStore: EvidenceStoreSchema, // 09_evidence
+});
+
+export type ScriptGenerationInput = z.infer<typeof ScriptGenerationInputSchema>;
 
 // ---------------------------------------------------------------------------
 // 8. Ad Script Generator Schema & Types
