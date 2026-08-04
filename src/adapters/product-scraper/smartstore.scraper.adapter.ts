@@ -22,7 +22,6 @@ export class SmartStoreScraperAdapter implements ProductScraperPort {
   public async scrapeProduct(url: string): Promise<ProductAnalysisResult> {
     console.log(`🕷️  [SmartStoreScraper] [1/6] Launching Playwright Chromium...`);
     const browser = await chromium.launch({
-      channel: 'chrome',
       headless: true,
       timeout: 30000,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

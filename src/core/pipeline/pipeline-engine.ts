@@ -16,6 +16,13 @@ import { EvidenceEngineModule } from '@modules/strategy/evidence-engine.module';
 import { UspGeneratorModule } from '@modules/strategy/usp-generator.module';
 import { AdScriptGeneratorModule } from '@modules/video-production/ad-script-generator.module';
 import { TimelineBuilderModule } from '@modules/video-production/timeline-builder.module';
+import { CreativeStrategyModule } from '@modules/creative/creative-strategy.module';
+import { HookEngineModule } from '@modules/creative/hook-engine.module';
+import { ScriptPlannerModule } from '@modules/creative/script-planner.module';
+import { CreativeComposerModule } from '@modules/creative/creative-composer.module';
+import { StoryboardBuilderModule } from '@modules/creative/storyboard-builder.module';
+import { ScriptQualityScorerModule } from '@modules/quality/script-quality-scorer.module';
+import { CreativeSummaryModule } from '@modules/creative/creative-summary.module';
 import { AdCreativeResult, CampaignRequest } from '@types/ad-types';
 import {
   CapCutProjectExport,
@@ -42,6 +49,20 @@ import {
   WinningAngleEngineResult,
   WinningAngleEngineSchema,
 } from '@types/intelligence-types';
+import {
+  CreativeStrategyResult,
+  CreativeStrategyResultSchema,
+  HookCandidatesResult,
+  HookCandidatesResultSchema,
+  ScriptPlanResult,
+  ScriptPlanResultSchema,
+  CreativeComposerResult,
+  CreativeComposerResultSchema,
+  StoryboardsResult,
+  StoryboardsResultSchema,
+  ScriptScoresResult,
+  ScriptScoresResultSchema,
+} from '@types/script-types';
 
 export interface EndToEndPipelineResult {
   campaignId: string;
@@ -57,6 +78,13 @@ export interface EndToEndPipelineResult {
   evidenceIndex: EvidenceEngineResult;
   uspResult: UspGenerationResult;
   scriptInput: ScriptGenerationInput;
+  creativeStrategy?: CreativeStrategyResult;
+  hooks?: HookCandidatesResult;
+  scriptPlan?: ScriptPlanResult;
+  composedScripts?: CreativeComposerResult;
+  storyboards10D?: StoryboardsResult;
+  scriptScores?: ScriptScoresResult;
+  creativeSummary?: string;
   scriptResult: any;
   timeline: TimelineSpecification;
   capCutExport: CapCutProjectExport;
@@ -85,7 +113,15 @@ export class PipelineEngine {
     private readonly editorExport: VideoEditorExportPort,
     // Optional Sprint 3 additions:
     private readonly personaEngine: PersonaEngineModule = new PersonaEngineModule(),
-    private readonly winningAngleEngine: WinningAngleEngineModule = new WinningAngleEngineModule()
+    private readonly winningAngleEngine: WinningAngleEngineModule = new WinningAngleEngineModule(),
+    // Optional Sprint 4 additions:
+    private readonly creativeStrategyModule: CreativeStrategyModule = new CreativeStrategyModule(),
+    private readonly hookEngineModule: HookEngineModule = new HookEngineModule(),
+    private readonly scriptPlannerModule: ScriptPlannerModule = new ScriptPlannerModule(),
+    private readonly creativeComposerModule: CreativeComposerModule = new CreativeComposerModule(),
+    private readonly storyboardBuilderModule: StoryboardBuilderModule = new StoryboardBuilderModule(),
+    private readonly scriptQualityScorerModule: ScriptQualityScorerModule = new ScriptQualityScorerModule(),
+    private readonly creativeSummaryModule: CreativeSummaryModule = new CreativeSummaryModule()
   ) {}
 
   /**
@@ -284,6 +320,81 @@ export class PipelineEngine {
     await eventBus.emit('intelligence:script_input_ready', { result: scriptInput });
 
     // -----------------------------------------------------------------------
+    // Stage 11: Creative Strategy Layer (11_creative_strategy.json)
+    // -----------------------------------------------------------------------
+    let creativeStrategy = await jsonStorage.loadAndValidate(campaignId, '11_creative_strategy.json', CreativeStrategyResultSchema);
+    if (!creativeStrategy) {
+      creativeStrategy = await this.creativeStrategyModule.generateStrategy(scriptInput);
+      await jsonStorage.saveStepResult(campaignId, '11_creative_strategy.json', creativeStrategy);
+    }
+    await eventBus.emit('creative:strategy_generated', { result: creativeStrategy });
+
+    // -----------------------------------------------------------------------
+    // Stage 12: Hook Candidates & Pattern Library (12_hook_candidates.json)
+    // -----------------------------------------------------------------------
+    let hooks = await jsonStorage.loadAndValidate(campaignId, '12_hook_candidates.json', HookCandidatesResultSchema);
+    if (!hooks) {
+      hooks = await this.hookEngineModule.generateHooks(scriptInput, creativeStrategy);
+      await jsonStorage.saveStepResult(campaignId, '12_hook_candidates.json', hooks);
+    }
+    await eventBus.emit('creative:hooks_generated', { result: hooks });
+
+    // -----------------------------------------------------------------------
+    // Stage 13: 7-Part Script Structure Plan (13_script_plan.json)
+    // -----------------------------------------------------------------------
+    let scriptPlan = await jsonStorage.loadAndValidate(campaignId, '13_script_plan.json', ScriptPlanResultSchema);
+    if (!scriptPlan) {
+      scriptPlan = await this.scriptPlannerModule.generateScriptPlan(scriptInput, creativeStrategy, hooks);
+      await jsonStorage.saveStepResult(campaignId, '13_script_plan.json', scriptPlan);
+    }
+    await eventBus.emit('creative:script_plan_generated', { result: scriptPlan });
+
+    // -----------------------------------------------------------------------
+    // Stage 14: Creative Composer (14_ad_scripts.json -> Version A~E + Evidence Strength)
+    // -----------------------------------------------------------------------
+    let composedScripts = await jsonStorage.loadAndValidate(campaignId, '14_ad_scripts.json', CreativeComposerResultSchema);
+    if (!composedScripts) {
+      composedScripts = await this.creativeComposerModule.composeScripts(scriptInput, creativeStrategy, hooks, scriptPlan);
+      await jsonStorage.saveStepResult(campaignId, '14_ad_scripts.json', composedScripts);
+    }
+    await eventBus.emit('creative:scripts_composed', { result: composedScripts });
+
+    // -----------------------------------------------------------------------
+    // Stage 15: 10-Dimension Storyboards (15_storyboards.json -> assetType included)
+    // -----------------------------------------------------------------------
+    let storyboards10D = await jsonStorage.loadAndValidate(campaignId, '15_storyboards.json', StoryboardsResultSchema);
+    if (!storyboards10D) {
+      storyboards10D = await this.storyboardBuilderModule.generateStoryboards(scriptInput, composedScripts);
+      await jsonStorage.saveStepResult(campaignId, '15_storyboards.json', storyboards10D);
+    }
+    await eventBus.emit('creative:storyboards_built', { result: storyboards10D });
+
+    // -----------------------------------------------------------------------
+    // Stage 16: Hybrid Quality Scorer (16_script_scores.json -> Rule + AI + Readability + Diversity)
+    // -----------------------------------------------------------------------
+    let scriptScores = await jsonStorage.loadAndValidate(campaignId, '16_script_scores.json', ScriptScoresResultSchema);
+    if (!scriptScores) {
+      scriptScores = await this.scriptQualityScorerModule.scoreScripts(scriptInput, composedScripts);
+      await jsonStorage.saveStepResult(campaignId, '16_script_scores.json', scriptScores);
+    }
+    await eventBus.emit('quality:script_scores_evaluated', { result: scriptScores });
+
+    // -----------------------------------------------------------------------
+    // Stage 17: Human-Readable Creative Summary (17_creative_summary.md)
+    // -----------------------------------------------------------------------
+    const outputDir = `data/${campaignId}`;
+    const creativeSummary = await this.creativeSummaryModule.generateSummary(
+      scriptInput,
+      creativeStrategy,
+      hooks,
+      composedScripts,
+      storyboards10D,
+      scriptScores,
+      outputDir
+    );
+    await eventBus.emit('creative:summary_created', { campaignId, path: `${outputDir}/17_creative_summary.md` });
+
+    // -----------------------------------------------------------------------
     // Downstream Production Layers (Script -> Timeline -> CapCut Export)
     // -----------------------------------------------------------------------
     const scriptResult = await this.scriptGenerator.generateScript(uspResult, 0);
@@ -331,6 +442,13 @@ export class PipelineEngine {
       evidenceIndex,
       uspResult,
       scriptInput,
+      creativeStrategy,
+      hooks,
+      scriptPlan,
+      composedScripts,
+      storyboards10D,
+      scriptScores,
+      creativeSummary,
       scriptResult,
       timeline,
       capCutExport,
